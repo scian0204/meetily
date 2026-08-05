@@ -62,6 +62,14 @@ COPY frontend/src-tauri/ frontend/src-tauri/
 # web export has to be in place before cargo runs.
 COPY --from=web /app/frontend/out/ frontend/out/
 
+# tauri-build only checks that every externalBin exists. ffmpeg is fetched by
+# build.rs, but llama-helper is the bundled llama.cpp summary sidecar, which the
+# web deployment does not offer at all — summaries go through Ollama or a cloud
+# provider. An empty placeholder satisfies the check without compiling llama.cpp;
+# the runtime stage copies only the server binary, so it never ships.
+RUN mkdir -p frontend/src-tauri/binaries \
+    && touch "frontend/src-tauri/binaries/llama-helper-$(rustc -vV | sed -n 's/^host: //p')"
+
 ARG FEATURES=""
 RUN if [ -n "$FEATURES" ]; then \
         cargo build --release --bin meetily-server --features "$FEATURES"; \
