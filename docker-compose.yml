@@ -15,7 +15,7 @@ services:
         # GPU build: MEETILY_FEATURES=cuda plus
         # MEETILY_RUST_BASE=nvidia/cuda:12.4.1-devel-ubuntu22.04
         FEATURES: "${MEETILY_FEATURES:-}"
-        RUST_BASE: "${MEETILY_RUST_BASE:-rust:1.83-bookworm}"
+        RUST_BASE: "${MEETILY_RUST_BASE:-rust:1.90-bookworm}"
     image: meetily-web:latest
     restart: unless-stopped
     ports:

@@ -8,7 +8,11 @@
 
 # Must be declared before the first FROM: an ARG used in a FROM line is only
 # resolved from the global scope, and expands to empty when declared later.
-ARG RUST_BASE=rust:1.83-bookworm
+#
+# 1.88+ is a hard floor: the cidre dependency is edition 2024, and older cargo
+# cannot parse its manifest, so it drops out of the resolver with a misleading
+# "no matching package named `cidre` found".
+ARG RUST_BASE=rust:1.90-bookworm
 
 # ---------------------------------------------------------------------------
 # 1. Web UI (static export, Tauri IPC modules aliased to the HTTP shim)
@@ -35,7 +39,7 @@ FROM ${RUST_BASE} AS server
 RUN if ! command -v cargo >/dev/null 2>&1; then \
       apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain 1.83.0 && \
+        | sh -s -- -y --default-toolchain 1.90.0 && \
       rm -rf /var/lib/apt/lists/*; \
     fi
 ENV PATH="/usr/local/cargo/bin:/root/.cargo/bin:${PATH}"

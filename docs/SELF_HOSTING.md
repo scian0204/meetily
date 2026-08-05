@@ -61,7 +61,7 @@ otherwise. Put a TLS-terminating reverse proxy in front of the container and set
 | `MEETILY_COOKIE_SECURE` | `0` | Set to `1` behind HTTPS so the session cookie is `Secure`. |
 | `OLLAMA_ENDPOINT` | unset | Overrides the endpoint stored in settings. |
 | `MEETILY_FEATURES` | empty | Cargo features for the build, e.g. `cuda`, `vulkan`. |
-| `MEETILY_RUST_BASE` | `rust:1.83-bookworm` | Builder base image. |
+| `MEETILY_RUST_BASE` | `rust:1.90-bookworm` | Builder base image. Needs rustc 1.88 or newer. |
 
 ## Security model
 
