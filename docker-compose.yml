@@ -1,0 +1,54 @@
+# Meetily, self-hosted.
+#
+#   cp .env.docker.example .env          # then set MEETILY_PASSWORD
+#   docker compose up -d --build                     # Meetily only
+#   docker compose --profile ollama up -d --build     # Meetily + local LLM
+#
+# Open http://localhost:8080. All state lives in ./data.
+
+services:
+  meetily:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        # GPU build: MEETILY_FEATURES=cuda plus
+        # MEETILY_RUST_BASE=nvidia/cuda:12.4.1-devel-ubuntu22.04
+        FEATURES: "${MEETILY_FEATURES:-}"
+        RUST_BASE: "${MEETILY_RUST_BASE:-rust:1.83-bookworm}"
+    image: meetily-web:latest
+    restart: unless-stopped
+    ports:
+      - "${MEETILY_PORT:-8080}:8080"
+    environment:
+      # Required unless you bind to loopback or set MEETILY_ALLOW_NO_AUTH=1.
+      MEETILY_PASSWORD: "${MEETILY_PASSWORD:?set MEETILY_PASSWORD in .env}"
+      # Set to 1 when a TLS-terminating proxy sits in front of this service.
+      MEETILY_COOKIE_SECURE: "${MEETILY_COOKIE_SECURE:-0}"
+      # Points summaries at the ollama service below; leave it for cloud providers.
+      OLLAMA_ENDPOINT: "${OLLAMA_ENDPOINT:-http://ollama:11434}"
+      RUST_LOG: "${RUST_LOG:-info}"
+    volumes:
+      - ./data:/data
+
+    # NVIDIA GPU: build with MEETILY_FEATURES=cuda, then uncomment.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    # Expose only if you want to run `ollama pull` from the host.
+    # ports:
+    #   - "11434:11434"
+
+volumes:
+  ollama:

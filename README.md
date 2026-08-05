@@ -131,6 +131,21 @@ pnpm install
 ./build-gpu.sh
 ```
 
+### 🐳 **Self-hosted web (Docker)**
+
+No desktop install: run Meetily on a server and use it from a browser. Transcription and
+summarization run on the server, so the client machine does not need the horsepower.
+
+```bash
+git clone https://github.com/Zackriya-Solutions/meeting-minutes
+cd meeting-minutes
+cp .env.docker.example .env     # set MEETILY_PASSWORD
+docker compose up -d --build
+```
+
+Then open <http://localhost:8080>. Full guide — GPU builds, browser limits on
+system-audio capture, and the security model: [Self-hosting Meetily](docs/SELF_HOSTING.md).
+
 ## Key Features in Action
 
 ### 🎯 Local Transcription

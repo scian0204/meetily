@@ -3,10 +3,29 @@ const tiptapPmResolveBase = path.dirname(require.resolve('@tiptap/pm/model'));
 const resolveFromTiptapPm = (pkg) =>
   require.resolve(pkg, { paths: [tiptapPmResolveBase] });
 
+// Self-hosted web build: swap the Tauri IPC modules for the HTTP/SSE shim.
+// Enabled with NEXT_PUBLIC_TARGET=web (docker/Dockerfile sets it). Desktop unaffected.
+const isWebTarget = process.env.NEXT_PUBLIC_TARGET === 'web';
+const webShim = (file) => path.resolve(__dirname, 'src/lib/web-shim', file);
+const webShimAliases = {
+  '@tauri-apps/api/core$': webShim('core.ts'),
+  '@tauri-apps/api/tauri$': webShim('core.ts'),
+  '@tauri-apps/api/event$': webShim('event.ts'),
+  '@tauri-apps/api/app$': webShim('plugins.ts'),
+  '@tauri-apps/api/path$': webShim('plugins.ts'),
+  '@tauri-apps/plugin-store$': webShim('plugins.ts'),
+  '@tauri-apps/plugin-os$': webShim('plugins.ts'),
+  '@tauri-apps/plugin-updater$': webShim('plugins.ts'),
+  '@tauri-apps/plugin-process$': webShim('plugins.ts'),
+};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false, // Disabled for BlockNote compatibility
   output: 'export',
+  // Web build: emit every route as a directory + index.html so a plain static file
+  // server (the Rust binary's ServeDir) resolves /login without extension probing.
+  trailingSlash: isWebTarget,
   images: {
     unoptimized: true,
   },
@@ -42,6 +61,7 @@ const nextConfig = {
         'prosemirror-inputrules': resolveFromTiptapPm('prosemirror-inputrules'),
         'prosemirror-gapcursor': resolveFromTiptapPm('prosemirror-gapcursor'),
         'prosemirror-dropcursor': resolveFromTiptapPm('prosemirror-dropcursor'),
+        ...(isWebTarget ? webShimAliases : {}),
       };
     }
     return config;

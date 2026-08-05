@@ -1,0 +1,22 @@
+# Keep the build context small: everything here is either rebuilt inside the image
+# or irrelevant to the server build.
+.git
+.github
+data
+target
+node_modules
+frontend/node_modules
+frontend/out
+frontend/.next
+frontend/src-tauri/target
+frontend/src-tauri/gen
+frontend/src-tauri/logs
+frontend/vs_buildtools.exe
+backend
+docs
+*.md
+
+# Never bake local secrets into an image layer.
+.env
+.env.*
+!.env.docker.example
