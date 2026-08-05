@@ -6,6 +6,10 @@
 #
 # Three stages: build the Next.js export, build the Rust server, ship a slim runtime.
 
+# Must be declared before the first FROM: an ARG used in a FROM line is only
+# resolved from the global scope, and expands to empty when declared later.
+ARG RUST_BASE=rust:1.83-bookworm
+
 # ---------------------------------------------------------------------------
 # 1. Web UI (static export, Tauri IPC modules aliased to the HTTP shim)
 # ---------------------------------------------------------------------------
@@ -25,7 +29,6 @@ RUN pnpm run build && test -f out/index.html
 # ---------------------------------------------------------------------------
 # 2. Rust server binary
 # ---------------------------------------------------------------------------
-ARG RUST_BASE=rust:1.83-bookworm
 FROM ${RUST_BASE} AS server
 
 # CUDA base images ship without a Rust toolchain; install one when needed.
