@@ -133,6 +133,14 @@ log rather than doing nothing.
 **Server exits immediately** — `MEETILY_PASSWORD` is unset on a public bind. Check
 `docker compose logs meetily`.
 
+**"The browser hides microphone access on … because it is not a secure context"** — the
+page is on plain HTTP at something other than `localhost`, so the browser withholds
+`navigator.mediaDevices` entirely. Put TLS in front of it and set
+`MEETILY_COOKIE_SECURE=1`. To try it without a certificate, either tunnel the port
+(`ssh -L 8080:localhost:8080 user@host`, then open <http://localhost:8080>) or add the
+origin to `chrome://flags/#unsafely-treat-insecure-origin-as-secure` — the flag is
+per-browser and turns off a real protection, so keep it to testing.
+
 **"No Parakeet models are available"** — download a transcription model in Settings.
 
 **No transcript appears while recording** — confirm the browser granted microphone

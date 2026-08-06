@@ -120,14 +120,32 @@ async function loadWorklet(context: AudioContext): Promise<void> {
   }
 }
 
+/**
+ * Browsers only expose `navigator.mediaDevices` in a secure context, so serving the
+ * app over plain HTTP on a LAN address leaves it `undefined` and every call site dies
+ * with an opaque `TypeError`. Fail once, here, with something the operator can act on.
+ */
+export function mediaDevices(): MediaDevices {
+  const devices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices;
+  if (!devices) {
+    const origin = typeof window === 'undefined' ? 'this origin' : window.location.origin;
+    throw new Error(
+      `The browser hides microphone access on ${origin} because it is not a secure context. ` +
+        'Serve Meetily over HTTPS (and set MEETILY_COOKIE_SECURE=1), or reach it through ' +
+        'http://localhost.',
+    );
+  }
+  return devices;
+}
+
 async function openMicrophone(deviceName?: string | null): Promise<MediaStream> {
   // The existing UI passes device *names*; map back to an id where possible.
   let deviceId: string | undefined;
   if (deviceName) {
-    const devices = await navigator.mediaDevices.enumerateDevices();
+    const devices = await mediaDevices().enumerateDevices();
     deviceId = devices.find((d) => d.kind === 'audioinput' && d.label === deviceName)?.deviceId;
   }
-  return navigator.mediaDevices.getUserMedia({
+  return mediaDevices().getUserMedia({
     audio: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
       echoCancellation: true,
@@ -139,7 +157,7 @@ async function openMicrophone(deviceName?: string | null): Promise<MediaStream> 
 }
 
 async function openSystemAudio(): Promise<MediaStream | null> {
-  const media = navigator.mediaDevices as MediaDevices & {
+  const media = mediaDevices() as MediaDevices & {
     getDisplayMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
   };
   if (typeof media.getDisplayMedia !== 'function') return null;
@@ -185,7 +203,7 @@ export function getCaptureState(): CaptureState {
 }
 
 export async function listInputDevices(): Promise<MediaDeviceInfo[]> {
-  const devices = await navigator.mediaDevices.enumerateDevices();
+  const devices = await mediaDevices().enumerateDevices();
   return devices.filter((device) => device.kind === 'audioinput');
 }
 
