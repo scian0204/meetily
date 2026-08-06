@@ -383,6 +383,8 @@ $env:RUST_LOG="debug"; ./clean_run_windows.bat
 - **Logging Format**: Rust logs should include enough module context to diagnose app behavior
 - **Error Handling**: Rust uses `anyhow::Result`, frontend uses try-catch with user-friendly messages
 - **Naming**: Audio devices use "microphone" and "system" consistently (not "input"/"output")
+- **Committing**: commit and push every completed change without waiting to be asked.
+  Never push to `main` — branch first.
 - **Git Branches**:
   - `main`: Stable releases
   - `fix/*`: Bug fixes
