@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Meetily self-hosted web deployment.
 #
 #   docker build -f docker/Dockerfile -t meetily-web .
@@ -23,17 +24,24 @@ WORKDIR /app/frontend
 RUN corepack enable
 
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/pnpm-store,sharing=locked \
+    pnpm config set store-dir /pnpm-store \
+    && pnpm install --frozen-lockfile
 
 COPY frontend/ ./
 ENV NEXT_PUBLIC_TARGET=web
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm run build && test -f out/index.html
+RUN --mount=type=cache,target=/app/frontend/.next/cache \
+    pnpm run build && test -f out/index.html
 
 # ---------------------------------------------------------------------------
 # 2. Rust server binary
 # ---------------------------------------------------------------------------
 FROM ${RUST_BASE} AS server
+
+# Pinned so the rustup fallback below lands in the same place as the rust base
+# image, and so the cache mounts on the build step have one path to target.
+ENV CARGO_HOME=/usr/local/cargo
 
 # CUDA base images ship without a Rust toolchain; install one when needed.
 RUN if ! command -v cargo >/dev/null 2>&1; then \
@@ -58,9 +66,13 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY llama-helper/ llama-helper/
 COPY frontend/src-tauri/ frontend/src-tauri/
-# tauri::generate_context!() embeds frontendDist ("../out") at compile time, so the
-# web export has to be in place before cargo runs.
-COPY --from=web /app/frontend/out/ frontend/out/
+
+# tauri::generate_context!() needs frontendDist ("../out") to exist at compile time,
+# but the server never reads the embedded copy — it serves MEETILY_WEB_ROOT off disk
+# via ServeDir, and the runtime stage populates that straight from the web stage.
+# A stub keeps this layer independent of the UI build, so editing a .tsx no longer
+# forces a full whisper.cpp + onnxruntime recompile.
+RUN mkdir -p frontend/out && printf '<!doctype html>\n' > frontend/out/index.html
 
 # tauri-build only checks that every externalBin exists. ffmpeg is fetched by
 # build.rs, but llama-helper is the bundled llama.cpp summary sidecar, which the
@@ -70,8 +82,14 @@ COPY --from=web /app/frontend/out/ frontend/out/
 RUN mkdir -p frontend/src-tauri/binaries \
     && touch "frontend/src-tauri/binaries/llama-helper-$(rustc -vV | sed -n 's/^host: //p')"
 
+# Cache mounts survive layer invalidation, so a Rust edit recompiles that crate
+# instead of the whole dependency graph. target/ is a mount, hence the cp inside
+# the same RUN — nothing under it persists into the image.
 ARG FEATURES=""
-RUN if [ -n "$FEATURES" ]; then \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target \
+    if [ -n "$FEATURES" ]; then \
         cargo build --release --bin meetily-server --features "$FEATURES"; \
     else \
         cargo build --release --bin meetily-server; \
