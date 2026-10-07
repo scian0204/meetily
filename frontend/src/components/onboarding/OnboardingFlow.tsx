@@ -12,7 +12,7 @@ interface OnboardingFlowProps {
 }
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
-  const { currentStep } = useOnboarding();
+  const { currentStep, statusLoaded } = useOnboarding();
   const [isMac, setIsMac] = React.useState(false);
 
   useEffect(() => {
@@ -30,6 +30,10 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     };
     checkPlatform();
   }, []);
+
+  // Steps (and their navigation/download buttons) appear only once the saved status is
+  // loaded; otherwise a slow load would land afterwards and reset the user's step.
+  if (!statusLoaded) return <div className="onboarding-flow" />;
 
   // 4-Step Onboarding Flow (System-Recommended Models):
   // Step 1: Welcome - Introduce Meetily features

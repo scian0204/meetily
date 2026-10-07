@@ -1,12 +1,12 @@
 use log::info;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use super::manager::DatabaseManager;
 use crate::state::AppState;
 
 /// Initialize database on app startup
 /// Handles first launch detection and conditional initialization
-pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), String> {
+pub async fn initialize_database_on_startup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     // Check if this is the first launch (no database exists yet)
     let is_first_launch = DatabaseManager::is_first_launch(app)
         .await

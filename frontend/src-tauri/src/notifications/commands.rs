@@ -6,7 +6,7 @@ use crate::notifications::{
 
 use anyhow::Result;
 use log::{info as log_info, error as log_error};
-use tauri::{State, AppHandle, Runtime, Wry};
+use tauri::{State, AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -29,8 +29,9 @@ pub async fn initialize_notification_manager<R: Runtime>(
 
 /// Get notification settings
 #[tauri::command]
-pub async fn get_notification_settings(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn get_notification_settings<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<NotificationSettings, String> {
     log_info!("Getting notification settings");
 
@@ -44,9 +45,10 @@ pub async fn get_notification_settings(
 
 /// Set notification settings
 #[tauri::command]
-pub async fn set_notification_settings(
+pub async fn set_notification_settings<R: Runtime>(
+    _app: AppHandle<R>,
     settings: NotificationSettings,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Setting notification settings");
 
@@ -61,8 +63,9 @@ pub async fn set_notification_settings(
 
 /// Request notification permission from the system
 #[tauri::command]
-pub async fn request_notification_permission(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn request_notification_permission<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<bool, String> {
     log_info!("Requesting notification permission");
 
@@ -77,9 +80,10 @@ pub async fn request_notification_permission(
 
 /// Show a custom notification
 #[tauri::command]
-pub async fn show_notification(
+pub async fn show_notification<R: Runtime>(
+    _app: AppHandle<R>,
     notification: Notification,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Showing custom notification: {}", notification.title);
 
@@ -94,8 +98,9 @@ pub async fn show_notification(
 
 /// Show a test notification
 #[tauri::command]
-pub async fn show_test_notification(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn show_test_notification<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Showing test notification");
 
@@ -110,8 +115,9 @@ pub async fn show_test_notification(
 
 /// Check if Do Not Disturb is active
 #[tauri::command]
-pub async fn is_dnd_active(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn is_dnd_active<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<bool, String> {
     let manager_lock = manager_state.read().await;
     if let Some(manager) = manager_lock.as_ref() {
@@ -123,8 +129,9 @@ pub async fn is_dnd_active(
 
 /// Get system Do Not Disturb status
 #[tauri::command]
-pub async fn get_system_dnd_status(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn get_system_dnd_status<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<bool, String> {
     let manager_lock = manager_state.read().await;
     if let Some(manager) = manager_lock.as_ref() {
@@ -136,9 +143,10 @@ pub async fn get_system_dnd_status(
 
 /// Set manual Do Not Disturb mode
 #[tauri::command]
-pub async fn set_manual_dnd(
+pub async fn set_manual_dnd<R: Runtime>(
+    _app: AppHandle<R>,
     enabled: bool,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Setting manual DND mode: {}", enabled);
 
@@ -153,9 +161,10 @@ pub async fn set_manual_dnd(
 
 /// Set user consent for notifications
 #[tauri::command]
-pub async fn set_notification_consent(
+pub async fn set_notification_consent<R: Runtime>(
+    _app: AppHandle<R>,
     consent: bool,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Setting notification consent: {}", consent);
 
@@ -170,8 +179,9 @@ pub async fn set_notification_consent(
 
 /// Clear all notifications
 #[tauri::command]
-pub async fn clear_notifications(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn clear_notifications<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Clearing all notifications");
 
@@ -186,8 +196,9 @@ pub async fn clear_notifications(
 
 /// Check if notification system is ready
 #[tauri::command]
-pub async fn is_notification_system_ready(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn is_notification_system_ready<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<bool, String> {
     let manager_lock = manager_state.read().await;
     if let Some(manager) = manager_lock.as_ref() {
@@ -199,9 +210,9 @@ pub async fn is_notification_system_ready(
 
 /// Initialize notification manager manually (for testing and ensuring it's ready)
 #[tauri::command]
-pub async fn initialize_notification_manager_manual(
-    app: AppHandle<Wry>,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn initialize_notification_manager_manual<R: Runtime>(
+    app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Manual initialization of notification manager requested");
 
@@ -228,9 +239,9 @@ pub async fn initialize_notification_manager_manual(
 
 /// Test notification with automatic consent for development/testing
 #[tauri::command]
-pub async fn test_notification_with_auto_consent(
-    app: AppHandle<Wry>,
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn test_notification_with_auto_consent<R: Runtime>(
+    app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<(), String> {
     log_info!("Testing notification with automatic consent");
 
@@ -266,8 +277,9 @@ pub async fn test_notification_with_auto_consent(
 
 /// Get notification system statistics
 #[tauri::command]
-pub async fn get_notification_stats(
-    manager_state: State<'_, NotificationManagerState<Wry>>
+pub async fn get_notification_stats<R: Runtime>(
+    _app: AppHandle<R>,
+    manager_state: State<'_, NotificationManagerState<R>>
 ) -> Result<serde_json::Value, String> {
     let manager_lock = manager_state.read().await;
     if let Some(manager) = manager_lock.as_ref() {
@@ -401,59 +413,5 @@ pub async fn show_recording_stopped_notification<R: Runtime>(
                 Err(anyhow::anyhow!("Failed to show notification: {}", e))
             }
         }
-    }
-}
-
-/// Show recording paused notification (internal use)
-pub async fn show_recording_paused_notification(
-    manager_state: &NotificationManagerState<Wry>,
-) -> Result<()> {
-    let manager_lock = manager_state.read().await;
-    if let Some(manager) = manager_lock.as_ref() {
-        manager.show_recording_paused().await
-    } else {
-        log_error!("Cannot show recording paused notification: manager not initialized");
-        Ok(())
-    }
-}
-
-/// Show recording resumed notification (internal use)
-pub async fn show_recording_resumed_notification(
-    manager_state: &NotificationManagerState<Wry>,
-) -> Result<()> {
-    let manager_lock = manager_state.read().await;
-    if let Some(manager) = manager_lock.as_ref() {
-        manager.show_recording_resumed().await
-    } else {
-        log_error!("Cannot show recording resumed notification: manager not initialized");
-        Ok(())
-    }
-}
-
-/// Show transcription complete notification (internal use)
-pub async fn show_transcription_complete_notification(
-    manager_state: &NotificationManagerState<Wry>,
-    file_path: Option<String>,
-) -> Result<()> {
-    let manager_lock = manager_state.read().await;
-    if let Some(manager) = manager_lock.as_ref() {
-        manager.show_transcription_complete(file_path).await
-    } else {
-        log_error!("Cannot show transcription complete notification: manager not initialized");
-        Ok(())
-    }
-}
-
-/// Show system error notification (internal use)
-pub async fn show_system_error_notification(
-    manager_state: &NotificationManagerState<Wry>,
-    error: String,
-) -> Result<()> {
-    let manager_lock = manager_state.read().await;
-    if let Some(manager) = manager_lock.as_ref() {
-        manager.show_system_error(error).await
-    } else {
-        log_error!("Cannot show system error notification: manager not initialized");
-        Ok(())
     }
 }

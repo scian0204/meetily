@@ -42,7 +42,7 @@ interface SidebarContextType {
   isCollapsed: boolean;
   toggleCollapse: () => void;
   meetings: CurrentMeeting[];
-  setMeetings: (meetings: CurrentMeeting[]) => void;
+  setMeetings: React.Dispatch<React.SetStateAction<CurrentMeeting[]>>;
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;

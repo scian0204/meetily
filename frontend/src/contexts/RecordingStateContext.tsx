@@ -46,6 +46,10 @@ interface RecordingStateContextType extends RecordingState {
   isProcessing: boolean;
   isSaving: boolean;
   isStartingRecording: boolean;
+
+  // True once the first get_recording_state call has finished (success or error).
+  // Until then isRecording is just the default false, not the backend's answer.
+  isBackendSynced: boolean;
 }
 
 const RecordingStateContext = createContext<RecordingStateContextType | null>(null);
@@ -70,6 +74,11 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
   });
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isBackendSynced, setIsBackendSynced] = useState(false);
+  // Bumped by every started/stopped/paused/resumed event. A get_recording_state
+  // result is only applied if no such event arrived while it was in flight;
+  // otherwise it is older than the event and would undo it.
+  const eventEpochRef = useRef(0);
 
   // NEW: Status setter with logging
   const setStatus = useCallback((status: RecordingStatus, message?: string) => {
@@ -87,8 +96,13 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
    * Called on mount (fixes refresh desync) and periodically while recording
    */
   const syncWithBackend = async () => {
+    const epoch = eventEpochRef.current;
     try {
       const backendState = await recordingService.getRecordingState();
+      if (epoch !== eventEpochRef.current) {
+        console.log('[RecordingStateContext] Dropping stale backend state (event arrived during sync)');
+        return;
+      }
 
       setState(prev => ({
         ...prev,
@@ -103,6 +117,8 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
     } catch (error) {
       console.error('[RecordingStateContext] Failed to sync with backend:', error);
       // Don't update state on error - keep current state
+    } finally {
+      setIsBackendSynced(true);
     }
   };
 
@@ -141,6 +157,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
         // Recording started
         const unlistenStarted = await recordingService.onRecordingStarted(() => {
           console.log('[RecordingStateContext] Recording started event');
+          eventEpochRef.current++;
           setState(prev => ({
             ...prev,
             isRecording: true,
@@ -164,6 +181,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
         // Recording stopped
         const unlistenStopped = await recordingService.onRecordingStopped((payload) => {
           console.log('[RecordingStateContext] Recording stopped event:', payload);
+          eventEpochRef.current++;
           setState(prev => {
             // Set status to STOPPING if not already in stop flow
             // This ensures smooth UI transition for tray/keyboard stops
@@ -193,6 +211,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
         // Recording paused
         const unlistenPaused = await recordingService.onRecordingPaused(() => {
           console.log('[RecordingStateContext] Recording paused event');
+          eventEpochRef.current++;
           setState(prev => ({
             ...prev,
             isPaused: true,
@@ -204,6 +223,7 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
         // Recording resumed
         const unlistenResumed = await recordingService.onRecordingResumed(() => {
           console.log('[RecordingStateContext] Recording resumed event');
+          eventEpochRef.current++;
           setState(prev => ({
             ...prev,
             isPaused: false,
@@ -345,7 +365,8 @@ export function RecordingStateProvider({ children }: { children: React.ReactNode
     isProcessing: state.status === RecordingStatus.PROCESSING_TRANSCRIPTS,
     isSaving: state.status === RecordingStatus.SAVING,
     isStartingRecording: state.status === RecordingStatus.STARTING,
-  }), [state, setStatus]);
+    isBackendSynced,
+  }), [state, setStatus, isBackendSynced]);
 
   return (
     <RecordingStateContext.Provider value={contextValue}>

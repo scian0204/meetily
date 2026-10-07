@@ -22,6 +22,8 @@ pub enum StreamBackend {
     CoreAudio {
         task: Option<tokio::task::JoinHandle<()>>,
     },
+    /// Browser PCM over WebSocket (meetily-server)
+    Web { device_type: DeviceType },
 }
 
 // SAFETY: While Stream doesn't implement Send, we ensure it's only accessed
@@ -58,6 +60,10 @@ impl AudioStream {
         recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
         backend_type: AudioCaptureBackend,
     ) -> Result<Self> {
+        if super::web_source::is_enabled() {
+            return Self::create_web_stream(device, state, device_type, recording_sender);
+        }
+
         info!("🎵 Stream: Creating audio stream for device: {} with backend: {:?}, device_type: {:?}",
               device.name, backend_type, device_type);
 
@@ -137,6 +143,37 @@ impl AudioStream {
         Ok(Self {
             device,
             backend: StreamBackend::Cpal(stream),
+        })
+    }
+
+    /// Create a browser-fed stream (meetily-server): same contract as the Core Audio path,
+    /// but samples come from web_source's consumer thread (an OS thread, so audio ingest
+    /// never competes with whisper inference on the tokio workers).
+    fn create_web_stream(
+        device: Arc<AudioDevice>,
+        state: Arc<RecordingState>,
+        device_type: DeviceType,
+        recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
+    ) -> Result<Self> {
+        let capture = AudioCapture::new(
+            device.clone(),
+            state,
+            super::web_source::WEB_SAMPLE_RATE,
+            1, // browser sends mono
+            device_type.clone(),
+            recording_sender,
+        );
+
+        super::web_source::attach(
+            &device_type,
+            Box::new(move |samples| capture.process_audio_data(samples)),
+        );
+
+        info!("🌐 Stream: Web audio source attached for {:?} device: {}", device_type, device.name);
+
+        Ok(Self {
+            device,
+            backend: StreamBackend::Web { device_type },
         })
     }
 
@@ -342,6 +379,9 @@ impl AudioStream {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                     info!("Core Audio task aborted");
                 }
+            }
+            StreamBackend::Web { device_type } => {
+                super::web_source::detach(&device_type);
             }
         }
 

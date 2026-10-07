@@ -95,6 +95,14 @@ fn load_custom_template(template_id: &str) -> Option<String> {
 pub fn get_template(template_id: &str) -> Result<Template, String> {
     info!("Loading template: {}", template_id);
 
+    // Ids become file names: never let one be a path (absolute, `..`, drive, separators).
+    if template_id.is_empty()
+        || template_id.starts_with('.')
+        || template_id.contains(['/', '\\', ':', '\0'])
+    {
+        return Err(format!("Invalid template id '{}'", template_id));
+    }
+
     // Try custom template first, then bundled, then built-in
     let json_content = if let Some(custom_content) = load_custom_template(template_id) {
         debug!("Using custom template for '{}'", template_id);

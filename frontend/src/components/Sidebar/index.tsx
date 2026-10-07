@@ -52,7 +52,6 @@ const Sidebar: React.FC = () => {
     searchTranscripts,
     searchResults,
     isSearching,
-    meetings,
     setMeetings,
     serverAddress
   } = useSidebar();
@@ -330,8 +329,7 @@ const Sidebar: React.FC = () => {
         meetingId: itemId,
       });
       console.log('Meeting deleted successfully');
-      const updatedMeetings = meetings.filter((m: CurrentMeeting) => m.id !== itemId);
-      setMeetings(updatedMeetings);
+      setMeetings(prev => prev.filter((m: CurrentMeeting) => m.id !== itemId));
 
       // Track meeting deletion
       Analytics.trackMeetingDeleted(itemId);
@@ -390,10 +388,9 @@ const Sidebar: React.FC = () => {
       });
 
       // Update local state
-      const updatedMeetings = meetings.map((m: CurrentMeeting) =>
+      setMeetings(prev => prev.map((m: CurrentMeeting) =>
         m.id === meetingId ? { ...m, title: newTitle } : m
-      );
-      setMeetings(updatedMeetings);
+      ));
 
       // Update current meeting if it's the one being edited
       if (currentMeeting?.id === meetingId) {

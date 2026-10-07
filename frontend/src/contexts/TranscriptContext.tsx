@@ -24,6 +24,10 @@ interface TranscriptContextType {
 
 const TranscriptContext = createContext<TranscriptContextType | undefined>(undefined);
 
+// Display order used everywhere in this context: chunk_start_time, then sequence_id
+const byChunkThenSequence = (a: Transcript, b: Transcript) =>
+  ((a.chunk_start_time || 0) - (b.chunk_start_time || 0)) || ((a.sequence_id || 0) - (b.sequence_id || 0));
+
 export function TranscriptProvider({ children }: { children: ReactNode }) {
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [meetingTitle, setMeetingTitle] = useState('+ New Call');
@@ -228,13 +232,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
       }
 
       // Sort both stale and recent transcripts by chunk_start_time, then by sequence_id
-      const sortTranscripts = (transcripts: Transcript[]) => {
-        return transcripts.sort((a, b) => {
-          const chunkTimeDiff = (a.chunk_start_time || 0) - (b.chunk_start_time || 0);
-          if (chunkTimeDiff !== 0) return chunkTimeDiff;
-          return (a.sequence_id || 0) - (b.sequence_id || 0);
-        });
-      };
+      const sortTranscripts = (transcripts: Transcript[]) => transcripts.sort(byChunkThenSequence);
 
       const sortedStaleTranscripts = sortTranscripts(staleTranscripts);
       const sortedRecentTranscripts = sortTranscripts(recentTranscripts);
@@ -264,11 +262,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
           const combined = [...prev, ...uniqueNewTranscripts];
 
           // Sort by chunk_start_time first, then by sequence_id
-          return combined.sort((a, b) => {
-            const chunkTimeDiff = (a.chunk_start_time || 0) - (b.chunk_start_time || 0);
-            if (chunkTimeDiff !== 0) return chunkTimeDiff;
-            return (a.sequence_id || 0) - (b.sequence_id || 0);
-          });
+          return combined.sort(byChunkThenSequence);
         });
 
         // Log the processing summary
@@ -360,44 +354,56 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
 
   // Sync transcript history and meeting name from backend on reload
   // This fixes the issue where reloading during active recording causes state desync
+  // Fetched once per isRecording false->true transition and merged by sequence_id:
+  // live segments can land before isRecording flips (reload / second tab), so a
+  // "only when empty" check would skip the history and the stop-save would lose it.
+  const historySyncedRef = useRef(false);
   useEffect(() => {
+    if (!recordingState.isRecording) {
+      historySyncedRef.current = false;
+      return;
+    }
+    if (historySyncedRef.current) return;
+    historySyncedRef.current = true;
+
     const syncFromBackend = async () => {
-      // If recording is active and we have no local transcripts, sync from backend
-      if (recordingState.isRecording && transcripts.length === 0) {
-        try {
-          console.log('[Reload Sync] Recording active after reload, syncing transcript history...');
+      try {
+        console.log('[Reload Sync] Recording active after reload, syncing transcript history...');
 
-          // Fetch transcript history from backend
-          const history = await transcriptService.getTranscriptHistory();
-          console.log(`[Reload Sync] Retrieved ${history.length} transcript segments from backend`);
+        // Fetch transcript history from backend
+        const history = await transcriptService.getTranscriptHistory();
+        console.log(`[Reload Sync] Retrieved ${history.length} transcript segments from backend`);
 
-          // Convert backend format to frontend Transcript format
-          const formattedTranscripts: Transcript[] = history.map((segment: any) => ({
-            id: segment.id,
-            text: segment.text,
-            timestamp: segment.display_time, // Use display_time for UI
-            sequence_id: segment.sequence_id,
-            chunk_start_time: segment.audio_start_time,
-            is_partial: false, // History segments are always final
-            confidence: segment.confidence,
-            audio_start_time: segment.audio_start_time,
-            audio_end_time: segment.audio_end_time,
-            duration: segment.duration,
-          }));
+        // Convert backend format to frontend Transcript format
+        const formattedTranscripts: Transcript[] = history.map((segment: any) => ({
+          id: segment.id,
+          text: segment.text,
+          timestamp: segment.display_time, // Use display_time for UI
+          sequence_id: segment.sequence_id,
+          chunk_start_time: segment.audio_start_time,
+          is_partial: false, // History segments are always final
+          confidence: segment.confidence,
+          audio_start_time: segment.audio_start_time,
+          audio_end_time: segment.audio_end_time,
+          duration: segment.duration,
+        }));
 
-          setTranscripts(formattedTranscripts);
-          console.log('[Reload Sync] ✅ Transcript history synced successfully');
+        setTranscripts(prev => {
+          const known = new Set(prev.map(t => t.sequence_id));
+          const missing = formattedTranscripts.filter(t => !known.has(t.sequence_id));
+          return missing.length ? [...prev, ...missing].sort(byChunkThenSequence) : prev;
+        });
+        console.log('[Reload Sync] ✅ Transcript history synced successfully');
 
-          // Fetch meeting name from backend
-          const meetingName = await recordingService.getRecordingMeetingName();
-          if (meetingName) {
-            console.log('[Reload Sync] Retrieved meeting name:', meetingName);
-            setMeetingTitle(meetingName);
-            console.log('[Reload Sync] ✅ Meeting title synced successfully');
-          }
-        } catch (error) {
-          console.error('[Reload Sync] Failed to sync from backend:', error);
+        // Fetch meeting name from backend
+        const meetingName = await recordingService.getRecordingMeetingName();
+        if (meetingName) {
+          console.log('[Reload Sync] Retrieved meeting name:', meetingName);
+          setMeetingTitle(meetingName);
+          console.log('[Reload Sync] ✅ Meeting title synced successfully');
         }
+      } catch (error) {
+        console.error('[Reload Sync] Failed to sync from backend:', error);
       }
     };
 

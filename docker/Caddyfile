@@ -1,0 +1,12 @@
+# HTTPS for Meetily (docker compose --profile https). Browsers only allow microphone
+# capture on HTTPS or localhost. A public MEETILY_DOMAIN gets a Let's Encrypt certificate.
+# localhost, *.local, *.internal, *.home.arpa and IP addresses get one from Caddy's local
+# CA automatically; for any other private name set MEETILY_TLS="tls internal".
+# Trust the local CA once in each browser.
+{$MEETILY_DOMAIN} {
+	{$MEETILY_TLS}
+	reverse_proxy meetily:8080 {
+		# Recording stop and model downloads can run for minutes over the WebSocket.
+		flush_interval -1
+	}
+}

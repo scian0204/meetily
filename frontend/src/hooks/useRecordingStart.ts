@@ -47,13 +47,14 @@ export function useRecordingStart(
 ): UseRecordingStartReturn {
   const [isAutoStarting, setIsAutoStarting] = useState(false);
 
-  // Synchronous latch: a rapid double-click re-enters handleRecordingStart
-  // before any state update lands, so an async/state guard can't stop it.
+  // Synchronous latch shared by all three start paths (button, sidebar auto-start,
+  // sidebar direct start): a rapid double-click or a button + sidebar start
+  // re-enters before any state update lands, so an async/state guard can't stop it.
   const isStartingRef = useRef(false);
 
   const { clearTranscripts, setMeetingTitle } = useTranscripts();
   const { setIsMeetingActive } = useSidebar();
-  const { selectedDevices } = useConfig();
+  const { getSelectedDevices } = useConfig();
   const { setStatus } = useRecordingState();
 
   // Generate meeting title with timestamp
@@ -157,9 +158,10 @@ export function useRecordingStart(
 
       // Start the actual backend recording
       console.log('Starting backend recording with meeting:', randomTitle);
+      const devices = await getSelectedDevices();
       await recordingService.startRecordingWithDevices(
-        selectedDevices?.micDevice || null,
-        selectedDevices?.systemDevice || null,
+        devices.micDevice || null,
+        devices.systemDevice || null,
         randomTitle
       );
       console.log('Backend recording started successfully');
@@ -205,7 +207,7 @@ export function useRecordingStart(
     } finally {
       isStartingRef.current = false;
     }
-  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkModelReady, checkIfModelDownloading, selectedDevices, showModal, setStatus]);
+  }, [generateMeetingTitle, setMeetingTitle, setIsRecording, clearTranscripts, setIsMeetingActive, checkModelReady, checkIfModelDownloading, getSelectedDevices, showModal, setStatus]);
 
   // Check for autoStartRecording flag and start recording automatically
   useEffect(() => {
@@ -214,8 +216,13 @@ export function useRecordingStart(
         const shouldAutoStart = sessionStorage.getItem('autoStartRecording');
         if (shouldAutoStart === 'true' && !isRecording && !isAutoStarting) {
           console.log('Auto-starting recording from navigation...');
-          setIsAutoStarting(true);
           sessionStorage.removeItem('autoStartRecording'); // Clear the flag
+          if (isStartingRef.current) {
+            console.log('Auto-start ignored - start already in progress');
+            return;
+          }
+          isStartingRef.current = true;
+          setIsAutoStarting(true);
 
           // Check the selected transcription model before starting.
           const modelReady = await checkModelReady();
@@ -236,6 +243,7 @@ export function useRecordingStart(
               Analytics.trackButtonClick('start_recording_blocked_missing', 'sidebar_auto');
             }
             setStatus(RecordingStatus.IDLE);
+            isStartingRef.current = false;
             setIsAutoStarting(false);
             return;
           }
@@ -249,9 +257,10 @@ export function useRecordingStart(
             setStatus(RecordingStatus.STARTING, 'Initializing recording...');
 
             console.log('Auto-starting backend recording with meeting:', generatedMeetingTitle);
+            const devices = await getSelectedDevices();
             const result = await recordingService.startRecordingWithDevices(
-              selectedDevices?.micDevice || null,
-              selectedDevices?.systemDevice || null,
+              devices.micDevice || null,
+              devices.systemDevice || null,
               generatedMeetingTitle
             );
             console.log('Auto-start backend recording result:', result);
@@ -283,6 +292,7 @@ export function useRecordingStart(
             }
             Analytics.trackButtonClick('start_recording_error', 'sidebar_auto');
           } finally {
+            isStartingRef.current = false;
             setIsAutoStarting(false);
           }
         }
@@ -293,7 +303,7 @@ export function useRecordingStart(
   }, [
     isRecording,
     isAutoStarting,
-    selectedDevices,
+    getSelectedDevices,
     generateMeetingTitle,
     setMeetingTitle,
     setIsRecording,
@@ -308,12 +318,13 @@ export function useRecordingStart(
   // Listen for direct recording trigger from sidebar when already on home page
   useEffect(() => {
     const handleDirectStart = async () => {
-      if (isRecording || isAutoStarting) {
+      if (isRecording || isAutoStarting || isStartingRef.current) {
         console.log('Recording already in progress, ignoring direct start event');
         return;
       }
 
       console.log('Direct start from sidebar - checking selected transcription model status');
+      isStartingRef.current = true;
       setIsAutoStarting(true);
 
       // Check the selected transcription model before starting.
@@ -335,6 +346,7 @@ export function useRecordingStart(
           Analytics.trackButtonClick('start_recording_blocked_missing', 'sidebar_direct');
         }
         setStatus(RecordingStatus.IDLE);
+        isStartingRef.current = false;
         setIsAutoStarting(false);
         return;
       }
@@ -347,9 +359,10 @@ export function useRecordingStart(
         setStatus(RecordingStatus.STARTING, 'Initializing recording...');
 
         console.log('Starting backend recording with meeting:', generatedMeetingTitle);
+        const devices = await getSelectedDevices();
         const result = await recordingService.startRecordingWithDevices(
-          selectedDevices?.micDevice || null,
-          selectedDevices?.systemDevice || null,
+          devices.micDevice || null,
+          devices.systemDevice || null,
           generatedMeetingTitle
         );
         console.log('Backend recording result:', result);
@@ -381,6 +394,7 @@ export function useRecordingStart(
         }
         Analytics.trackButtonClick('start_recording_error', 'sidebar_direct');
       } finally {
+        isStartingRef.current = false;
         setIsAutoStarting(false);
       }
     };
@@ -393,7 +407,7 @@ export function useRecordingStart(
   }, [
     isRecording,
     isAutoStarting,
-    selectedDevices,
+    getSelectedDevices,
     generateMeetingTitle,
     setMeetingTitle,
     setIsRecording,

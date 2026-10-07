@@ -41,6 +41,11 @@ impl Default for RecordingPreferences {
 
 /// Get the default recordings folder based on platform
 pub fn get_default_recordings_folder() -> PathBuf {
+    // Explicit override (used by meetily-server to keep recordings on its data volume)
+    if let Some(dir) = std::env::var_os("MEETILY_RECORDINGS_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
+
     #[cfg(target_os = "windows")]
     {
         // Windows: %USERPROFILE%\Music\meetily-recordings

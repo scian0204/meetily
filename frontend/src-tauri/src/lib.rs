@@ -54,6 +54,8 @@ pub mod summary;
 pub mod tray;
 pub mod utils;
 pub mod whisper_engine;
+#[cfg(feature = "server")]
+pub mod server;
 
 use audio::{list_audio_devices, AudioDevice, trigger_audio_permission};
 use log::{error as log_error, info as log_info};
@@ -444,171 +446,18 @@ pub fn get_language_preference_internal() -> Option<String> {
     LANGUAGE_PREFERENCE.lock().ok().map(|lang| lang.clone())
 }
 
-pub fn run() {
-    log::set_max_level(log::LevelFilter::Info);
-
-    let mut builder = tauri::Builder::default();
-
-    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            log_info!(
-                "Second app instance requested with args: {:?}, cwd: {:?}",
-                args,
-                cwd
-            );
-
-            tray::focus_main_window(app);
-        }));
-    }
-
+/// Plugins, managed state and the command list shared by the desktop app and meetily-server.
+pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .manage(whisper_engine::parallel_commands::ParallelProcessorState::new())
         .manage(Arc::new(RwLock::new(
-            None::<notifications::manager::NotificationManager<tauri::Wry>>,
-        )) as NotificationManagerState<tauri::Wry>)
+            None::<notifications::manager::NotificationManager<R>>,
+        )) as NotificationManagerState<R>)
         .manage(audio::init_system_audio_state())
         .manage(summary::summary_engine::ModelManagerState(Arc::new(tokio::sync::Mutex::new(None))))
-        .setup(|_app| {
-            #[cfg(target_os = "windows")]
-            match _app.path().resolve(
-                "onnxruntime.dll",
-                tauri::path::BaseDirectory::Resource,
-            ) {
-                Ok(runtime_path) => {
-                    match catch_onnx_runtime_init(|| {
-                        ort::init_from(runtime_path.to_string_lossy().into_owned())
-                            .with_telemetry(false)
-                            .commit()
-                            .map(|_| ())
-                    }) {
-                        Ok(()) => log::info!(
-                            "Initialized bundled ONNX Runtime from {}",
-                            runtime_path.display()
-                        ),
-                        Err(error) => record_onnx_runtime_failure(format!(
-                            "Failed to initialize bundled ONNX Runtime from {}: {}",
-                            runtime_path.display(),
-                            error
-                        )),
-                    }
-                }
-                Err(error) => record_onnx_runtime_failure(format!(
-                    "Failed to resolve bundled ONNX Runtime resource: {}",
-                    error
-                )),
-            };
-
-            log::info!("Application setup complete");
-
-            // Initialize system tray
-            if let Err(e) = tray::create_tray(_app.handle()) {
-                log::error!("Failed to create system tray: {}", e);
-            }
-
-            // Initialize notification system with proper defaults
-            log::info!("Initializing notification system...");
-            let app_for_notif = _app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let notif_state = app_for_notif.state::<NotificationManagerState<tauri::Wry>>();
-                match notifications::commands::initialize_notification_manager(app_for_notif.clone()).await {
-                    Ok(manager) => {
-                        // Set default consent and permissions on first launch
-                        if let Err(e) = manager.set_consent(true).await {
-                            log::error!("Failed to set initial consent: {}", e);
-                        }
-                        if let Err(e) = manager.request_permission().await {
-                            log::error!("Failed to request initial permission: {}", e);
-                        }
-
-                        // Store the initialized manager
-                        let mut state_lock = notif_state.write().await;
-                        *state_lock = Some(manager);
-                        log::info!("Notification system initialized with default permissions");
-                    }
-                    Err(e) => {
-                        log::error!("Failed to initialize notification manager: {}", e);
-                    }
-                }
-            });
-
-            // Set models directory to use app_data_dir (unified storage location)
-            whisper_engine::commands::set_models_directory(&_app.handle());
-
-            // Initialize Whisper engine on startup
-            tauri::async_runtime::spawn(async {
-                if let Err(e) = whisper_engine::commands::whisper_init().await {
-                    log::error!("Failed to initialize Whisper engine on startup: {}", e);
-                }
-            });
-
-            // Set Parakeet models directory
-            parakeet_engine::commands::set_models_directory(&_app.handle());
-
-            // Initialize Parakeet engine on startup
-            tauri::async_runtime::spawn(async {
-                if let Err(e) = parakeet_engine::commands::parakeet_init().await {
-                    log::error!("Failed to initialize Parakeet engine on startup: {}", e);
-                }
-            });
-
-            // Initialize ModelManager for summary engine (async, non-blocking)
-            let app_handle_for_model_manager = _app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                match summary::summary_engine::commands::init_model_manager_at_startup(&app_handle_for_model_manager).await {
-                    Ok(_) => log::info!("ModelManager initialized successfully at startup"),
-                    Err(e) => {
-                        log::warn!("Failed to initialize ModelManager at startup: {}", e);
-                        log::warn!("ModelManager will be lazy-initialized on first use");
-                    }
-                }
-            });
-
-            // Trigger system audio permission request on startup (similar to microphone permission)
-            // #[cfg(target_os = "macos")]
-            // {
-            //     tauri::async_runtime::spawn(async {
-            //         if let Err(e) = audio::permissions::trigger_system_audio_permission() {
-            //             log::warn!("Failed to trigger system audio permission: {}", e);
-            //         }
-            //     });
-            // }
-
-            // Initialize database (handles first launch detection and conditional setup)
-            tauri::async_runtime::block_on(async {
-                database::setup::initialize_database_on_startup(&_app.handle()).await
-            })
-            .expect("Failed to initialize database");
-
-            // Initialize bundled templates directory for dynamic template discovery
-            log::info!("Initializing bundled templates directory...");
-            if let Ok(resource_path) = _app.handle().path().resource_dir() {
-                let templates_dir = resource_path.join("templates");
-                log::info!("Setting bundled templates directory to: {:?}", templates_dir);
-                summary::templates::set_bundled_templates_dir(templates_dir);
-            } else {
-                log::warn!("Failed to resolve resource directory for templates");
-            }
-
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    if let Err(e) = window.hide() {
-                        log::error!("Failed to hide main window on close request: {}", e);
-                    } else {
-                        log::info!("Main window hidden to tray on close request");
-                    }
-                }
-            }
-        })
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
@@ -831,6 +680,190 @@ pub fn run() {
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
         ])
+}
+
+/// Core startup shared by desktop setup and meetily-server (everything except tray and Windows ONNX DLL loading).
+pub fn init_core<R: Runtime>(app: &AppHandle<R>) {
+    // Initialize notification system with proper defaults
+    log::info!("Initializing notification system...");
+    let app_for_notif = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let notif_state = app_for_notif.state::<NotificationManagerState<R>>();
+        match notifications::commands::initialize_notification_manager(app_for_notif.clone()).await {
+            Ok(manager) => {
+                // Set default consent and permissions on first launch
+                if let Err(e) = manager.set_consent(true).await {
+                    log::error!("Failed to set initial consent: {}", e);
+                }
+                if let Err(e) = manager.request_permission().await {
+                    log::error!("Failed to request initial permission: {}", e);
+                }
+
+                // Store the initialized manager
+                let mut state_lock = notif_state.write().await;
+                *state_lock = Some(manager);
+                log::info!("Notification system initialized with default permissions");
+            }
+            Err(e) => {
+                log::error!("Failed to initialize notification manager: {}", e);
+            }
+        }
+    });
+
+    // Set models directory to use app_data_dir (unified storage location)
+    whisper_engine::commands::set_models_directory(app);
+
+    // Initialize Whisper engine on startup
+    tauri::async_runtime::spawn(async {
+        if let Err(e) = whisper_engine::commands::whisper_init().await {
+            log::error!("Failed to initialize Whisper engine on startup: {}", e);
+        }
+    });
+
+    // Set Parakeet models directory
+    parakeet_engine::commands::set_models_directory(app);
+
+    // Initialize Parakeet engine on startup
+    tauri::async_runtime::spawn(async {
+        if let Err(e) = parakeet_engine::commands::parakeet_init().await {
+            log::error!("Failed to initialize Parakeet engine on startup: {}", e);
+        }
+    });
+
+    // Initialize ModelManager for summary engine (async, non-blocking)
+    let app_handle_for_model_manager = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match summary::summary_engine::commands::init_model_manager_at_startup(&app_handle_for_model_manager).await {
+            Ok(_) => log::info!("ModelManager initialized successfully at startup"),
+            Err(e) => {
+                log::warn!("Failed to initialize ModelManager at startup: {}", e);
+                log::warn!("ModelManager will be lazy-initialized on first use");
+            }
+        }
+    });
+
+    // Trigger system audio permission request on startup (similar to microphone permission)
+    // #[cfg(target_os = "macos")]
+    // {
+    //     tauri::async_runtime::spawn(async {
+    //         if let Err(e) = audio::permissions::trigger_system_audio_permission() {
+    //             log::warn!("Failed to trigger system audio permission: {}", e);
+    //         }
+    //     });
+    // }
+
+    // Initialize database (handles first launch detection and conditional setup)
+    tauri::async_runtime::block_on(async {
+        database::setup::initialize_database_on_startup(app).await
+    })
+    .expect("Failed to initialize database");
+
+    // Initialize bundled templates directory for dynamic template discovery
+    log::info!("Initializing bundled templates directory...");
+    if let Ok(resource_path) = app.path().resource_dir() {
+        let templates_dir = resource_path.join("templates");
+        log::info!("Setting bundled templates directory to: {:?}", templates_dir);
+        summary::templates::set_bundled_templates_dir(templates_dir);
+    } else {
+        log::warn!("Failed to resolve resource directory for templates");
+    }
+}
+
+/// RunEvent::Exit cleanup: DB WAL checkpoint + llama-helper sidecar shutdown.
+pub async fn shutdown_cleanup<R: Runtime>(app: &AppHandle<R>) {
+    // Clean up database connection and checkpoint WAL
+    if let Some(app_state) = app.try_state::<state::AppState>() {
+        log::info!("Starting database cleanup...");
+        if let Err(e) = app_state.db_manager.cleanup().await {
+            log::error!("Failed to cleanup database: {}", e);
+        } else {
+            log::info!("Database cleanup completed successfully");
+        }
+    } else {
+        log::warn!("AppState not available for database cleanup (likely first launch)");
+    }
+
+    // Clean up sidecar
+    log::info!("Cleaning up sidecar...");
+    if let Err(e) = summary::summary_engine::force_shutdown_sidecar().await {
+        log::error!("Failed to force shutdown sidecar: {}", e);
+    }
+}
+
+pub fn run() {
+    log::set_max_level(log::LevelFilter::Info);
+
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            log_info!(
+                "Second app instance requested with args: {:?}, cwd: {:?}",
+                args,
+                cwd
+            );
+
+            tray::focus_main_window(app);
+        }));
+    }
+
+    configure(builder)
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .setup(|_app| {
+            #[cfg(target_os = "windows")]
+            match _app.path().resolve(
+                "onnxruntime.dll",
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                Ok(runtime_path) => {
+                    match catch_onnx_runtime_init(|| {
+                        ort::init_from(runtime_path.to_string_lossy().into_owned())
+                            .with_telemetry(false)
+                            .commit()
+                            .map(|_| ())
+                    }) {
+                        Ok(()) => log::info!(
+                            "Initialized bundled ONNX Runtime from {}",
+                            runtime_path.display()
+                        ),
+                        Err(error) => record_onnx_runtime_failure(format!(
+                            "Failed to initialize bundled ONNX Runtime from {}: {}",
+                            runtime_path.display(),
+                            error
+                        )),
+                    }
+                }
+                Err(error) => record_onnx_runtime_failure(format!(
+                    "Failed to resolve bundled ONNX Runtime resource: {}",
+                    error
+                )),
+            };
+
+            log::info!("Application setup complete");
+
+            // Initialize system tray
+            if let Err(e) = tray::create_tray(_app.handle()) {
+                log::error!("Failed to create system tray: {}", e);
+            }
+
+            init_core(_app.handle());
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    if let Err(e) = window.hide() {
+                        log::error!("Failed to hide main window on close request: {}", e);
+                    } else {
+                        log::info!("Main window hidden to tray on close request");
+                    }
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
@@ -841,25 +874,7 @@ pub fn run() {
                 }
                 tauri::RunEvent::Exit => {
                     log::info!("Application exiting, cleaning up resources...");
-                    tauri::async_runtime::block_on(async {
-                        // Clean up database connection and checkpoint WAL
-                        if let Some(app_state) = _app_handle.try_state::<state::AppState>() {
-                            log::info!("Starting database cleanup...");
-                            if let Err(e) = app_state.db_manager.cleanup().await {
-                                log::error!("Failed to cleanup database: {}", e);
-                            } else {
-                                log::info!("Database cleanup completed successfully");
-                            }
-                        } else {
-                            log::warn!("AppState not available for database cleanup (likely first launch)");
-                        }
-
-                        // Clean up sidecar
-                        log::info!("Cleaning up sidecar...");
-                        if let Err(e) = summary::summary_engine::force_shutdown_sidecar().await {
-                            log::error!("Failed to force shutdown sidecar: {}", e);
-                        }
-                    });
+                    tauri::async_runtime::block_on(shutdown_cleanup(_app_handle));
                     log::info!("Application cleanup complete");
                 }
                 _ => {}

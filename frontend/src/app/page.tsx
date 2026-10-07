@@ -33,7 +33,7 @@ export default function Home() {
   const recordingState = useRecordingState();
 
   // Extract status from global state
-  const { status, isStopping, isProcessing, isSaving } = recordingState;
+  const { status, isStopping, isProcessing, isSaving, isBackendSynced } = recordingState;
 
   // Hooks
   const { hasMicrophone } = usePermissionCheck();
@@ -70,6 +70,10 @@ export default function Home() {
   useEffect(() => {
     const performStartupChecks = async () => {
       try {
+        // Until the first backend sync, isRecording is only the default false: a
+        // meeting being recorded right now (reload / second tab) would be offered.
+        if (!isBackendSynced) return;
+
         // Skip recovery check if currently recording or processing stop
         // This prevents the recovery dialog from showing when:
         if (recordingState.isRecording ||
@@ -103,7 +107,7 @@ export default function Home() {
     };
 
     performStartupChecks();
-  }, [checkForRecoverableTranscripts, recordingState.isRecording, status]);
+  }, [checkForRecoverableTranscripts, recordingState.isRecording, status, isBackendSynced]);
 
   // Watch for recoverable meetings changes and show dialog once per session
   useEffect(() => {

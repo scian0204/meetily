@@ -183,6 +183,11 @@ fn resolve_mic_or_default<R: Runtime>(
 ) -> Option<Arc<super::AudioDevice>> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
+    // meetily-server: the mic lives in the browser, never enumerate server devices
+    if super::web_source::is_enabled() {
+        return Some(Arc::new(super::web_source::device(requested_name, super::DeviceType::Input)));
+    }
+
     let requested_specific = requested_name.is_some();
 
     if let Some(name) = requested_name {
@@ -241,6 +246,11 @@ fn resolve_mic_or_default<R: Runtime>(
 /// devices are Pulse/ALSA monitor *inputs* tagged Output, so output_devices()
 /// would false-negative them. stream.rs still hard-fails on a missing device.
 fn resolve_system_or_default(requested_name: Option<&str>) -> Option<Arc<super::AudioDevice>> {
+    // meetily-server: tab audio comes from the browser, never enumerate server devices
+    if super::web_source::is_enabled() {
+        return Some(Arc::new(super::web_source::device(requested_name, super::DeviceType::Output)));
+    }
+
     if let Some(name) = requested_name {
         match parse_audio_device(name) {
             Ok(device) => {

@@ -1,0 +1,17 @@
+# Build context for the root Dockerfile: sources only.
+.git
+.github
+**/node_modules
+**/target
+**/.next
+frontend/out
+frontend/src-tauri/binaries
+frontend/src-tauri/gen
+frontend/src-tauri/logs
+frontend/vs_buildtools.exe
+backend
+docs
+data
+**/*.stackdump
+.env
+.env.*

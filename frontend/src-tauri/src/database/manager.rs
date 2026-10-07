@@ -41,7 +41,7 @@ impl DatabaseManager {
     // after they can just delete the existing .sqlite file and then copy the existing .db file to
     // the current app dir, So the system detects legacy db and copy it and starts with that data
     // (Newly created .sqlite with the copied content from .db)
-    pub async fn new_from_app_handle(app_handle: &tauri::AppHandle) -> Result<Self> {
+    pub async fn new_from_app_handle<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<Self> {
         // Resolve the app's data directory
         let app_data_dir = app_handle
             .path()
@@ -118,7 +118,7 @@ impl DatabaseManager {
     }
 
     /// Check if this is the first launch (sqlite database doesn't exist yet)
-    pub async fn is_first_launch(app_handle: &tauri::AppHandle) -> Result<bool> {
+    pub async fn is_first_launch<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<bool> {
         let app_data_dir = app_handle
             .path()
             .app_data_dir()
@@ -130,8 +130,8 @@ impl DatabaseManager {
     }
 
     /// Import a legacy database from the specified path and initialize
-    pub async fn import_legacy_database(
-        app_handle: &tauri::AppHandle,
+    pub async fn import_legacy_database<R: tauri::Runtime>(
+        app_handle: &tauri::AppHandle<R>,
         legacy_db_path: &str,
     ) -> Result<Self> {
         let app_data_dir = app_handle

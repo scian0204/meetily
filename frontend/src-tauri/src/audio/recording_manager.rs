@@ -290,7 +290,10 @@ impl RecordingManager {
         self.stream_manager.start_streams(microphone_device.clone(), system_device.clone(), None).await?;
 
         // Start device monitoring to detect disconnects
-        if let Some(ref mut monitor) = self.device_monitor {
+        // (not for browser audio: it would poll the server's own devices and report bogus disconnects)
+        if super::web_source::is_enabled() {
+            info!("Device monitoring skipped (browser audio source)");
+        } else if let Some(ref mut monitor) = self.device_monitor {
             if let Err(e) = monitor.start_monitoring(microphone_device, system_device) {
                 warn!("Failed to start device monitoring: {}", e);
                 // Non-fatal - continue without monitoring

@@ -1,4 +1,4 @@
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, AppHandle, Emitter, Runtime, State};
 use crate::audio::{
     start_system_audio_capture, list_system_audio_devices, check_system_audio_permissions,
     SystemAudioDetector, SystemAudioEvent, new_system_audio_callback
@@ -36,8 +36,8 @@ pub async fn check_system_audio_permissions_command() -> bool {
 
 /// Start monitoring system audio usage by other applications
 #[command]
-pub async fn start_system_audio_monitoring(
-    app_handle: AppHandle,
+pub async fn start_system_audio_monitoring<R: Runtime>(
+    app_handle: AppHandle<R>,
     detector_state: State<'_, SystemAudioDetectorState>
 ) -> Result<(), String> {
     let mut detector_guard = detector_state.lock()

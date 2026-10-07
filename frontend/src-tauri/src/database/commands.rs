@@ -1,7 +1,7 @@
 use log::{error, info};
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use super::manager::DatabaseManager;
 use crate::state::AppState;
@@ -14,7 +14,7 @@ pub struct DatabaseCheckResult {
 
 /// Check if this is the first launch (no database exists yet)
 #[tauri::command]
-pub async fn check_first_launch(app: AppHandle) -> Result<bool, String> {
+pub async fn check_first_launch<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
     DatabaseManager::is_first_launch(&app)
         .await
         .map_err(|e| format!("Failed to check first launch: {}", e))
@@ -22,7 +22,7 @@ pub async fn check_first_launch(app: AppHandle) -> Result<bool, String> {
 
 /// Open a dialog to select a folder or file for legacy database import
 #[tauri::command]
-pub async fn select_legacy_database_path(app: AppHandle) -> Result<Option<String>, String> {
+pub async fn select_legacy_database_path<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
     info!("Opening dialog to select legacy database location");
@@ -84,7 +84,7 @@ pub async fn detect_legacy_database(selected_path: String) -> Result<Option<Stri
 
 /// Check for legacy database in the default app data directory
 #[tauri::command]
-pub async fn check_default_legacy_database(app: AppHandle) -> Result<Option<String>, String> {
+pub async fn check_default_legacy_database<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -143,8 +143,8 @@ pub async fn check_homebrew_database(path: String) -> Result<Option<DatabaseChec
 
 /// Import legacy database and initialize the database manager
 #[tauri::command]
-pub async fn import_and_initialize_database(
-    app: AppHandle,
+pub async fn import_and_initialize_database<R: Runtime>(
+    app: AppHandle<R>,
     legacy_db_path: String,
 ) -> Result<(), String> {
     info!(
@@ -174,7 +174,7 @@ pub async fn import_and_initialize_database(
 
 /// Initialize a fresh database (for users who don't want to import)
 #[tauri::command]
-pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
+pub async fn initialize_fresh_database<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     info!("Initializing fresh database");
 
     let db_manager = DatabaseManager::new_from_app_handle(&app)
@@ -224,7 +224,7 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
 
 /// Get the database directory path
 #[tauri::command]
-pub async fn get_database_directory(app: AppHandle) -> Result<String, String> {
+pub async fn get_database_directory<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -235,7 +235,7 @@ pub async fn get_database_directory(app: AppHandle) -> Result<String, String> {
 
 /// Open the database folder in the system file explorer
 #[tauri::command]
-pub async fn open_database_folder(app: AppHandle) -> Result<(), String> {
+pub async fn open_database_folder<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let app_data_dir = app
         .path()
         .app_data_dir()

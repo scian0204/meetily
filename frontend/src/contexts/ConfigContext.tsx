@@ -55,6 +55,12 @@ interface ConfigContextType {
   // Device configuration
   selectedDevices: SelectedDevices;
   setSelectedDevices: (devices: SelectedDevices) => void;
+  // false until get_recording_preferences has returned (or failed)
+  devicePrefsLoaded: boolean;
+  // Waits for the saved device prefs, then returns the current selection.
+  // Recording starts use this instead of selectedDevices so an early click
+  // doesn't silently record with the defaults.
+  getSelectedDevices: () => Promise<SelectedDevices>;
 
   // Language preference
   selectedLanguage: string;
@@ -134,10 +140,26 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string>('');
 
   // Device configuration state
-  const [selectedDevices, setSelectedDevices] = useState<SelectedDevices>({
+  const [selectedDevices, setSelectedDevicesState] = useState<SelectedDevices>({
     micDevice: null,
     systemDevice: null
   });
+  // Ref mirror so getSelectedDevices sees a selection made moments ago (before re-render)
+  const selectedDevicesRef = useRef(selectedDevices);
+  const setSelectedDevices = useCallback((devices: SelectedDevices) => {
+    selectedDevicesRef.current = devices;
+    setSelectedDevicesState(devices);
+  }, []);
+  const [devicePrefsLoaded, setDevicePrefsLoaded] = useState(false);
+  const [devicePrefsReady] = useState(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>(r => { resolve = r; });
+    return { promise, resolve };
+  });
+  const getSelectedDevices = useCallback(async () => {
+    await devicePrefsReady.promise;
+    return selectedDevicesRef.current;
+  }, [devicePrefsReady]);
 
   // Language preference state
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -361,10 +383,13 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.log('No device preferences found or failed to load:', error);
+      } finally {
+        devicePrefsReady.resolve();
+        setDevicePrefsLoaded(true);
       }
     };
     loadDevicePreferences();
-  }, []);
+  }, [devicePrefsReady, setSelectedDevices]);
 
   // Calculate model options based on available models
   const modelOptions: Record<ModelConfig['provider'], string[]> = {
@@ -499,6 +524,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     setTranscriptModelConfig,
     selectedDevices,
     setSelectedDevices,
+    devicePrefsLoaded,
+    getSelectedDevices,
     selectedLanguage,
     setSelectedLanguage: handleSetSelectedLanguage,
     showConfidenceIndicator,
@@ -522,6 +549,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     updateProviderApiKey,
     transcriptModelConfig,
     selectedDevices,
+    setSelectedDevices,
+    devicePrefsLoaded,
+    getSelectedDevices,
     selectedLanguage,
     handleSetSelectedLanguage,
     showConfidenceIndicator,

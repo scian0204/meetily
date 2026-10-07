@@ -220,6 +220,10 @@ pub fn update_tray_menu<R: Runtime>(app: &AppHandle<R>) {
 }
 
 pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: RecordingState) {
+    // No tray (e.g. meetily-server): skip building native menus entirely
+    if app.tray_by_id("main-tray").is_none() {
+        return;
+    }
     log::info!("Tray: Setting intermediate state: {:?}", state);
     // During recording state transitions, we assume recording is allowed (we're already recording)
     if let Ok(menu) = build_menu(app, state, true) {
@@ -291,6 +295,10 @@ async fn check_can_record<R: Runtime>(app: &AppHandle<R>) -> bool {
 }
 
 pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
+    // No tray (e.g. meetily-server): skip building native menus entirely
+    if app.tray_by_id("main-tray").is_none() {
+        return;
+    }
     log::info!("Tray: update_tray_menu_async called");
     // Get the current recording state
     let recording_state = get_current_recording_state().await;

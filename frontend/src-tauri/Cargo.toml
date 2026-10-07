@@ -7,12 +7,21 @@ license = "MIT"
 repository = "https://github.com/Zackriya-Solutions/meeting-minutes"
 edition = "2021"
 rust-version = "1.77"
+# Two binaries: the desktop app (src/main.rs) and meetily-server (web deployment).
+default-run = "meetily"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Headless web server: runs the same Tauri app on MockRuntime behind HTTP/WebSocket
+# so a browser can drive it. Build with `--features server --bin meetily-server`.
+[[bin]]
+name = "meetily-server"
+path = "src/server_main.rs" # outside src/bin: tauri-cli bundles every file it finds there
+required-features = ["server"]
 
 
 # Hardware acceleration features for whisper-rs
@@ -51,6 +60,9 @@ hipblas = ["whisper-rs/hipblas"]   # Linux: AMD ROCm HIP
 # CPU optimizations (fallback for systems without GPU)
 openblas = ["whisper-rs/openblas"] # Optimized BLAS (Auto-enabled on Windows/Linux)
 openmp = ["whisper-rs/openmp"]     # OpenMP parallel processing
+
+# meetily-server (web deployment). tauri/test provides the MockRuntime the server runs on.
+server = ["tauri/test", "dep:axum", "dep:tower-http"]
 
 [build-dependencies]
 tauri-build = { version = "2.3.0", features = [] }
@@ -146,6 +158,10 @@ whatlang = "0.16.4"
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", branch = "main" }
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
+
+# meetily-server only (feature "server")
+axum = { version = "0.7", features = ["ws"], optional = true }
+tower-http = { version = "0.5", features = ["fs"], optional = true }
 
 # Common Tauri configuration
 tauri = { version = "2.6.2", features = [ "macos-private-api", "protocol-asset", "tray-icon"] }

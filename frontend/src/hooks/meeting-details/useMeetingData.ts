@@ -25,7 +25,7 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
   const blockNoteSummaryRef = useRef<BlockNoteSummaryViewRef>(null);
 
   // Sidebar context
-  const { setCurrentMeeting, setMeetings, meetings: sidebarMeetings } = useSidebar();
+  const { setCurrentMeeting, setMeetings } = useSidebar();
 
   // Sync aiSummary state when summaryData prop changes (fixes display of fetched summaries)
   useEffect(() => {
@@ -77,12 +77,11 @@ export function useMeetingData({ meeting, summaryData, onMeetingUpdated }: UseMe
   const updateMeetingTitle = useCallback((newTitle: string) => {
     console.log('📝 Updating meeting title to:', newTitle);
     setMeetingTitle(newTitle);
-    const updatedMeetings = sidebarMeetings.map((m: CurrentMeeting) =>
+    setMeetings(prev => prev.map((m: CurrentMeeting) =>
       m.id === meeting.id ? { id: m.id, title: newTitle } : m
-    );
-    setMeetings(updatedMeetings);
+    ));
     setCurrentMeeting({ id: meeting.id, title: newTitle });
-  }, [meeting.id, sidebarMeetings, setMeetings, setCurrentMeeting]);
+  }, [meeting.id, setMeetings, setCurrentMeeting]);
 
   return {
     // State

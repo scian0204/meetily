@@ -33,6 +33,7 @@ struct AudioMixerRingBuffer {
     system_buffer: VecDeque<f32>,
     window_size_samples: usize,  // Fixed mixing window (e.g., 50ms)
     max_buffer_size: usize,  // Safety limit (e.g., 100ms)
+    wait_for_both: bool,  // Browser audio (meetily-server): sources arrive frame-aligned
 }
 
 impl AudioMixerRingBuffer {
@@ -56,6 +57,7 @@ impl AudioMixerRingBuffer {
             system_buffer: VecDeque::with_capacity(max_buffer_size),
             window_size_samples,
             max_buffer_size,
+            wait_for_both: super::web_source::is_enabled(),
         }
     }
 
@@ -98,8 +100,16 @@ impl AudioMixerRingBuffer {
     }
 
     fn can_mix(&self) -> bool {
-        self.mic_buffer.len() >= self.window_size_samples ||
-        self.system_buffer.len() >= self.window_size_samples
+        let (mic, sys, window) = (self.mic_buffer.len(), self.system_buffer.len(), self.window_size_samples);
+        if self.wait_for_both {
+            // Browser audio delivers both sources frame-aligned: wait until both hold a window
+            // instead of zero-padding whichever is one frame behind (a gap every window).
+            // A source that stays empty (no tab audio shared) mixes as silence once the
+            // other holds two windows.
+            (mic >= window && sys >= window) || mic >= 2 * window || sys >= 2 * window
+        } else {
+            mic >= window || sys >= window
+        }
     }
 
     fn extract_window(&mut self) -> Option<(Vec<f32>, Vec<f32>)> {
@@ -1112,5 +1122,25 @@ mod tests {
         // uninterrupted speech. Batch import/retranscription use 2000ms.
         // See #679 and #756.
         assert_eq!(VAD_REDEMPTION_TIME_MS, 500);
+    }
+
+    #[test]
+    fn web_ring_buffer_waits_for_both_sources() {
+        let mut ring = AudioMixerRingBuffer::new(48000);
+        ring.wait_for_both = true;
+        let window = ring.window_size_samples;
+
+        ring.add_samples(DeviceType::Microphone, vec![0.1; window]);
+        ring.add_samples(DeviceType::System, vec![0.2; window - 960]);
+        assert!(!ring.can_mix(), "system is one frame behind: wait instead of padding it");
+        ring.add_samples(DeviceType::System, vec![0.2; 960]);
+        let (mic, sys) = ring.extract_window().unwrap();
+        assert!(mic.iter().all(|&s| s == 0.1) && sys.iter().all(|&s| s == 0.2));
+
+        // Tab audio never shared: the microphone alone mixes once it holds two windows.
+        ring.add_samples(DeviceType::Microphone, vec![0.1; window]);
+        assert!(!ring.can_mix());
+        ring.add_samples(DeviceType::Microphone, vec![0.1; window]);
+        assert!(ring.can_mix());
     }
 }

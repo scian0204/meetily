@@ -1,0 +1,71 @@
+# Meetily web (self-hosted). Docs: docs/WEB_SERVER.md
+#
+#   MEETILY_PASSWORD=change-me docker compose up -d --build
+#       -> http://localhost:8080 (microphone capture works on localhost only)
+#
+#   MEETILY_PASSWORD=change-me MEETILY_DOMAIN=meet.example.com \
+#     docker compose --profile https up -d --build
+#       -> https://meet.example.com (any device; browsers need HTTPS for the microphone)
+#
+# All data (database, models, recordings) lives in the "meetily-data" volume.
+
+services:
+  meetily:
+    build:
+      context: .
+      args:
+        # GPU (NVIDIA): see docs/WEB_SERVER.md. Defaults build for the CPU.
+        BUILD_IMAGE: ${MEETILY_BUILD_IMAGE:-rust:1.90-bookworm}
+        RUNTIME_IMAGE: ${MEETILY_RUNTIME_IMAGE:-debian:bookworm-slim}
+        WHISPER_FEATURES: ${MEETILY_WHISPER_FEATURES:-}
+        LLAMA_FEATURES: ${MEETILY_LLAMA_FEATURES:-}
+        # Parallel compile jobs; each can take ~1-2 GB of RAM.
+        CARGO_BUILD_JOBS: ${MEETILY_BUILD_JOBS:-4}
+    image: meetily-web:${MEETILY_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MEETILY_PORT:-8080}:8080"
+    environment:
+      MEETILY_PASSWORD: ${MEETILY_PASSWORD:?set MEETILY_PASSWORD}
+      MEETILY_COOKIE_SECURE: ${MEETILY_COOKIE_SECURE:-0}
+      # Whisper picks its quality tier from this (the container cannot see host RAM reliably).
+      MEMORY_GB: ${MEETILY_MEMORY_GB:-8}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - meetily-data:/data
+    # NVIDIA GPU (after a CUDA build):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  # HTTPS in front of meetily: real certificates for MEETILY_DOMAIN, or a local CA for "localhost".
+  https:
+    profiles: ["https"]
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [meetily]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MEETILY_DOMAIN: ${MEETILY_DOMAIN:-localhost}
+      # "tls internal" for private names Caddy cannot get a public certificate for
+      # (localhost, *.local, *.internal, *.home.arpa and IP addresses get one automatically).
+      MEETILY_TLS: ${MEETILY_TLS:-}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+  # Optional local LLM for summaries (set the Ollama endpoint to http://ollama:11434 in the UI).
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  meetily-data:
+  caddy-data:
+  ollama-data:

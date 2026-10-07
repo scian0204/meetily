@@ -47,6 +47,8 @@ interface OnboardingContextType {
   recommendedSummaryModel: string;
   databaseExists: boolean;
   isBackgroundDownloading: boolean;
+  // Saved status loaded (or failed to load); until then step/download actions would be overwritten by it
+  statusLoaded: boolean;
   // Permissions
   permissions: OnboardingPermissions;
   permissionsSkipped: boolean;
@@ -97,6 +99,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   const [recommendedSummaryModel, setRecommendedSummaryModel] = useState<string>('');
   const [databaseExists, setDatabaseExists] = useState(false);
   const [isBackgroundDownloading, setIsBackgroundDownloading] = useState(false);
+  // Saved status not read yet: auto-saving the initial defaults would overwrite it
+  // (a slow get_onboarding_status, e.g. over the network, used to reset completed onboarding).
+  const [statusLoaded, setStatusLoaded] = useState(false);
 
   // Permissions state
   const [permissions, setPermissions] = useState<OnboardingPermissions>({
@@ -220,9 +225,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
-    // Don't auto-save if completed (to avoid overwriting completion status)
-    // Also don't auto-save if we are currently in the process of completing
-    if (completed || isCompletingRef.current) return;
+    // Don't auto-save before the saved status is loaded, if completed (to avoid overwriting
+    // completion status), or while completion is in progress
+    if (!statusLoaded || completed || isCompletingRef.current) return;
 
     saveTimeoutRef.current = setTimeout(() => {
       saveOnboardingStatus();
@@ -231,7 +236,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [currentStep, parakeetDownloaded, summaryModelDownloaded, completed]);
+  }, [currentStep, parakeetDownloaded, summaryModelDownloaded, completed, statusLoaded]);
 
   // Listen to Parakeet download progress
   useEffect(() => {
@@ -377,6 +382,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }
     } catch (error) {
       console.error('[OnboardingContext] Failed to load onboarding status:', error);
+    } finally {
+      setStatusLoaded(true);
     }
   };
 
@@ -622,6 +629,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         recommendedSummaryModel,
         databaseExists,
         isBackgroundDownloading,
+        statusLoaded,
         permissions,
         permissionsSkipped,
         goToStep,

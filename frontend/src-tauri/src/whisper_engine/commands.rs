@@ -124,8 +124,8 @@ fn discover_models_standalone() -> Result<Vec<ModelInfo>, String> {
 }
 
 #[command]
-pub async fn whisper_load_model(
-    app_handle: tauri::AppHandle,
+pub async fn whisper_load_model<R: Runtime>(
+    app_handle: AppHandle<R>,
     model_name: String
 ) -> Result<(), String> {
     let engine = {
@@ -419,8 +419,8 @@ pub async fn whisper_get_models_directory() -> Result<String, String> {
 }
 
 #[command]
-pub async fn whisper_download_model(
-    app_handle: tauri::AppHandle,
+pub async fn whisper_download_model<R: Runtime>(
+    app_handle: AppHandle<R>,
     model_name: String,
 ) -> Result<(), String> {
     let engine = {

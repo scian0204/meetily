@@ -68,7 +68,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const [showOnboarding, setShowOnboarding] = useState(false)
+  // null = get_onboarding_status not answered yet: render neither onboarding nor the
+  // main app, so the app's startup effects don't run for a user who isn't onboarded
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null)
   const [onboardingCompleted, setOnboardingCompleted] = useState(false)
 
   // Import audio state
@@ -82,10 +84,10 @@ export default function RootLayout({
       .then((status) => {
         const isComplete = status?.completed ?? false
         setOnboardingCompleted(isComplete)
+        setShowOnboarding(!isComplete)
 
         if (!isComplete) {
           console.log('[Layout] Onboarding not completed, showing onboarding flow')
-          setShowOnboarding(true)
         } else {
           console.log('[Layout] Onboarding completed, showing main app')
         }
@@ -158,7 +160,7 @@ export default function RootLayout({
 
   // Listen for drag-drop events
   useEffect(() => {
-    if (showOnboarding) return; // Don't handle drops during onboarding
+    if (showOnboarding !== false) return; // Don't handle drops during onboarding (or before status is known)
 
     const unlisteners: UnlistenFn[] = [];
     const cleanedUpRef = { current: false };
@@ -248,7 +250,7 @@ export default function RootLayout({
                               <DownloadProgressToastProvider />
 
                               {/* Show onboarding or main app */}
-                              {showOnboarding ? (
+                              {showOnboarding === null ? null : showOnboarding ? (
                                 <OnboardingFlow onComplete={handleOnboardingComplete} />
                               ) : (
                                 <div className="flex">
